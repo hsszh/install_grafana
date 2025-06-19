@@ -1,0 +1,75 @@
+---
+- name: Install Grafana on the system
+  hosts: control
+  become: true
+  tasks:
+
+    - name: Install Grafana on Debian Systems
+      when: ansible_os_family == "Debian"
+      block:
+
+        - name: Download Grafana GPG key for Debian
+          ansible.builtin.get_url:
+            url: https://apt.grafana.com/gpg.key
+            dest: /usr/share/keyrings/grafana.key
+            mode: '0644'
+
+        - name: Add Grafana apt repository on Debian
+          ansible.builtin.apt_repository:
+            repo: "deb [signed-by=/usr/share/keyrings/grafana.key] https://apt.grafana.com stable main"
+            filename: grafana
+            state: present
+
+        - name: Install Grafana Enterprise on Debian
+          ansible.builtin.apt:
+            pkg: grafana-enterprise
+            state: present
+            update_cache: true
+
+    - name: Install Grafana on RedHat Systems
+      when: ansible_os_family == "RedHat"
+      block:
+
+        - name: Download Grafana GPG key for RedHat
+          ansible.builtin.get_url:
+            url: https://rpm.grafana.com/gpg.key
+            dest: /etc/pki/rpm-gpg/RPM_GPG_KEY_grafana
+            mode: '0644'
+
+        - name: Add Grafana repository on RedHat
+          ansible.builtin.copy:
+            dest: /etc/yum.repos.d/grafana.repo
+            content: |
+              [grafana]
+              name=grafana
+              baseurl=https://rpm.grafana.com/rpm/stable/x86_64/
+              gpgcheck=1
+              gpgkey=file:///etc/pki/rpm-gpg/RPM_GPG_KEY_grafana
+            mode: '0644'
+
+        - name: Install Grafana Enterprise on RedHat
+          ansible.builtin.dnf:
+            pkg: grafana-enterprise
+            state: present
+
+    - name: Check if firewalld is running
+      ansible.builtin.systemd:
+        name: firewalld
+      register: firewalld_status
+
+    - name: Output firewalld status
+      ansible.builtin.debug:
+        msg: "Firewalld status: {{ firewalld_status.status.ActiveState }}"
+
+    - name: Open port 3000 in firewalld if active
+      ansible.posix.firewalld:
+        port: 3000/tcp
+        permanent: true
+        state: enabled
+      when: firewalld_status.status.ActiveState == "active"
+
+    - name: Start and enable Grafana service
+      ansible.builtin.systemd:
+        name: grafana-server
+        state: started
+        enabled: true
